@@ -323,22 +323,17 @@ class GoogleSearch(object):
     def _extract_title_url(self, result):
         #title_a = result.find('a', {'class': re.compile(r'\bl\b')})
         title_a = result.find('a')
-        #print(title_a)
-        #print("okay")
         if not title_a:
             self._maybe_raise(
                 ParseError, "Title tag in Google search result was not found", result)
             return None, None
         title = ''.join(title_a.findAll(text=True))
-        #print(title)
         title = self._html_unescape(title)
-        #print(title)
         url = title_a['href']
-        #print(url)
         match = re.match(r'/url\?q=(http[^&]+)&', url)
         if match:
             url = urllib.unquote(match.group(1))
-            #print(url)
+
         # print('title: %s' % title )
         # print('url: %s' % url )
         return title, url
@@ -383,7 +378,6 @@ class GoogleSearch(object):
             self._maybe_raise(
                 ParseError, "Description tag in Google search result was not found", result)
         #desc_span = result.findNext('span', {'class': 'st'}).text
-        print(desc_span)
         if not desc_span:
             self._maybe_raise(
                 ParseError, "Description tag in Google search result was not found", result)
@@ -451,20 +445,12 @@ class BlogSearch(GoogleSearch):
         title, url = self._extract_title_url(result)
         desc = self._extract_description(result)
         if not title or not url or not desc:
-            if not title:
-                print("no title")
-            if not url:
-                print("no url")
-            if not desc:
-                print("no desc")
             return None
         return SearchResult(title, url, desc)
 
     def _extract_title_url(self, result):
         #title_a = result.find('a', {'class': re.compile(r'\bl\b')})
         title_a = result.findNext('a')
-        print(title_a)
-        print("okay")
         if not title_a:
             self._maybe_raise(
                 ParseError, "Title tag in Blog search result was not found", result)
