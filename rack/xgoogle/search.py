@@ -236,7 +236,7 @@ class GoogleSearch(object):
             else:
                 url = GoogleSearch.NEXT_PAGE_1
 
-        safe_url = [url % { 'query': urllib.parse.quote_plus(self.query.encode('utf8')),
+        safe_url = [url % { 'query': urllib.parse.quote_plus(self.query),
                            'start': self._page * self._results_per_page,
                            'num': self._results_per_page,
                            'tld' : self._tld,
