@@ -1,6 +1,6 @@
-This is a Google library called 'xgoogle'. Current version is 1.3.
+This is a Google library called 'xgoogle'. Current version is 1.4.
 
-It's written by Peteris Krumins (peter@catonmat.net).
+This was originally written by Peteris Krumins (peter@catonmat.net).
 His blog is at http://www.catonmat.net  --  good coders code, great reuse.
 
 The code is licensed under MIT license.
@@ -187,13 +187,11 @@ v1.1:  * added Google Sponsored Links Search.
 v1.2:  * added Google Sets module
 v1.3:  * added Google Translate module
        * fixed a bug in browser.py when KeyboardInterrupt did not get propagated.
+v1.4:  * mended no results returning for author, actor and other similiar searches.
 
 --------------------------------------------------------------------------
 
 That's it. Have fun! :)
 
-
-Sincerely,
-Peteris Krumins
-http://www.catonmat.net
+Ryan Davis
 
