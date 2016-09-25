@@ -1,8 +1,8 @@
-#!/usr/bin/python
-# encoding: utf-8
+#!/usr/bin/env python3
+# -*- coding: utf8 -*-
 #
-# Peteris Krumins (peter@catonmat.net)
-# http://www.catonmat.net  --  good coders code, great reuse
+# Peteris Krumins (peter@catonmat.net) [http://www.catonmat.net]
+# Updated by Nikola Milosevic (nikola.milosevic@inspiratron.org) [http://www.inspiratron.org]
 #
 # http://www.catonmat.net/blog/python-library-for-google-search/
 #
@@ -11,23 +11,19 @@
 
 import re
 import urllib
-from urlparse import urlparse
-from htmlentitydefs import name2codepoint
+import html.entities
 from bs4 import BeautifulSoup
+import nltk
 
-from browser import Browser, BrowserError
-
+from xgoogle.browser import Browser, BrowserError
 
 class SearchError(Exception):
-
     """
     Base class for Google Search exceptions.
     """
     pass
 
-
 class ParseError(SearchError):
-
     """
     Parse error in Google results.
     self.msg attribute contains explanation why parsing failed
@@ -46,21 +42,60 @@ class ParseError(SearchError):
         return self.tag.prettify()
 
 
-class SearchResult:
+#     videoname =  nltk.clean_html(str(h3[0]))
+#         video_url = result.findAll('cite')
+#         date_and_author = result.find('div',{'class':'f slp'})
+#         da = str.split(str(date_and_author,' - Uploaded by'))
+#         date = da[0]
+#         author = da[1]
+#         desc = result.find('span',{'class':'st'})
+#         description = nltk.clean_html(str(desc))
+class FaceVideoSearchResult:
+    def __init__(self, name, url, description,date,duration,author):
+        self.name = name
+        self.url = url
+        self.description = description
+        self.date = date
+        self.duration = duration
+        self.author= author
 
-    def __init__(self, title, url, desc):
+    def __str__(self):
+        return 'Google Search Result: "%s"' % self.name
+
+class FaceImageSearchResult:
+    def __init__(self, trumb, url):
+        self.url = url
+        self.trumb = trumb
+
+    def __str__(self):
+        return 'Google Search Result: "%s"' % self.trumb
+
+class SearchResult:
+    def __init__(self, title='', url='', desc=''):
         self.title = title
         self.url = url
         self.desc = desc
-        self.domain = urlparse(url).netloc  # self._extract_domain(url)
 
-    def _extract_domain(self, url):
-        parsed_uri = urlparse(url)
-        return parsed_uri.netloc
+    def getURL(self):
+        return self.url
+
+    def setURL(self, url):
+        self.url = url
+
+    def getTitle(self):
+        return self.title
+
+    def setTitle(self, title):
+        self.title = title
+
+    def getdesc(self):
+        return self.desc
+
+    def setdesc(self, desc):
+        self.desc = desc
 
     def __str__(self):
-        return 'Google Search Result: "%s"' % self.title
-
+        return 'Google Search Result: "%s"' % self.url
 
 class GoogleSearch(object):
     SEARCH_URL_0 = "http://www.google.%(tld)s/search?hl=%(lang)s&q=%(query)s&btnG=Google+Search"
@@ -68,12 +103,12 @@ class GoogleSearch(object):
     SEARCH_URL_1 = "http://www.google.%(tld)s/search?hl=%(lang)s&q=%(query)s&num=%(num)d&btnG=Google+Search"
     NEXT_PAGE_1 = "http://www.google.%(tld)s/search?hl=%(lang)s&q=%(query)s&num=%(num)d&start=%(start)d"
 
-    def __init__(self, query, random_agent=False, debug=False, lang="en", tld="com", re_search_strings=None):
+    def __init__(self, query, random_agent=True, debug=False, lang="en", tld="com", re_search_strings=None, repeat=None):
         self.query = query
         self.debug = debug
         self.browser = Browser(debug=debug)
         self.results_info = None
-        self.eor = False  # end of results
+        self.eor = False # end of results
         self._page = 0
         self._first_indexed_in_previous = None
         self._filetype = None
@@ -82,11 +117,12 @@ class GoogleSearch(object):
         self._last_from = 0
         self._lang = lang
         self._tld = tld
+        self.repeat = repeat
 
         if re_search_strings:
             self._re_search_strings = re_search_strings
         elif lang == "de":
-            self._re_search_strings = ("Ergebnisse", "von", u"ungefähr")
+            self._re_search_strings = ("Ergebnisse", "von", "ungefähr")
         elif lang == "es":
             self._re_search_strings = ("Resultados", "de", "aproximadamente")
         # add more localised versions here
@@ -134,12 +170,10 @@ class GoogleSearch(object):
             try:
                 num = float(interval)
             except ValueError:
-                raise SearchError, "Wrong parameter to first_indexed_in_previous: %s" % (
-                    str(interval))
+                raise SearchError("Wrong parameter to first_indexed_in_previous: %s" % (str(interval)))
             self._first_indexed_in_previous = 'm' + str(interval)
 
-    first_indexed_in_previous = property(
-        _get_first_indexed_in_previous, _set_first_indexed_in_previous, doc="possible values: day, week, month, year, or a float value of months")
+    first_indexed_in_previous = property(_get_first_indexed_in_previous, _set_first_indexed_in_previous, doc="possible values: day, week, month, year, or a float value of months")
 
     def _get_filetype(self):
         return self._filetype
@@ -147,8 +181,7 @@ class GoogleSearch(object):
     def _set_filetype(self, filetype):
         self._filetype = filetype
 
-    filetype = property(
-        _get_filetype, _set_filetype, doc="file extension to search for")
+    filetype = property(_get_filetype, _set_filetype, doc="file extension to search for")
 
     def _get_results_per_page(self):
         return self._results_per_page
@@ -162,9 +195,282 @@ class GoogleSearch(object):
         """ Gets a page of results """
         if self.eor:
             return []
+        MAX_VALUE = 1000000
         page = self._get_results_page()
-        search_info = self._extract_info(page)
+        #search_info = self._extract_info(page)
         results = self._extract_results(page)
+        search_info = {'from': self.results_per_page*self._page,
+                       'to': self.results_per_page*self._page + len(results),
+                       'total': MAX_VALUE}
+        if not self.results_info:
+            self.results_info = search_info
+            if self.num_results == 0:
+                self.eor = True
+                return []
+        if not results:
+            self.eor = True
+            return []
+        if self._page > 0 and search_info['from'] == self._last_from:
+            self.eor = True
+            return []
+        if search_info['to'] == search_info['total']:
+            self.eor = True
+        self._page += 1
+        self._last_from = search_info['from']
+        return results
+
+    def _maybe_raise(self, cls, *arg):
+        if self.debug:
+            raise cls(*arg)
+
+    def _get_results_page(self):
+        """Construct search url, and get the page content"""
+        if self._page == 0:
+            if self._results_per_page == 10:
+                url = GoogleSearch.SEARCH_URL_0
+            else:
+                url = GoogleSearch.SEARCH_URL_1
+        else:
+            if self._results_per_page == 10:
+                url = GoogleSearch.NEXT_PAGE_0
+            else:
+                url = GoogleSearch.NEXT_PAGE_1
+
+        safe_url = [url % { 'query': urllib.parse.quote_plus(self.query.encode('utf8')),
+                           'start': self._page * self._results_per_page,
+                           'num': self._results_per_page,
+                           'tld' : self._tld,
+                           'lang' : self._lang }]
+
+        # possibly extend url with optional properties
+        if self._first_indexed_in_previous:
+            safe_url.extend(["&as_qdr=", self._first_indexed_in_previous])
+        if self._filetype:
+            safe_url.extend(["&as_filetype=", self._filetype])
+        if self.repeat:
+            safe_url.extend(["&filter=", '0'])
+
+        safe_url = "".join(safe_url)
+        self._last_search_url = safe_url
+
+        try:
+            page = self.browser.get_page(safe_url)
+        except BrowserError as e:
+            raise SearchError("Failed getting %s: %s" % (e.url, e.error))
+
+        return BeautifulSoup(page, "html.parser")
+
+    def _extract_info(self, soup):
+        """Extract total results
+        Page X of about XXX results
+        """
+        empty_info = {'from': 0, 'to': 0, 'total': 0}
+        div_ssb = soup.find('div', id='ssb')
+        if not div_ssb:
+            self._maybe_raise(ParseError, "Div with number of results was not found on Google search page", soup)
+            return empty_info
+        p = div_ssb.find('p')
+        if not p:
+            self._maybe_raise(ParseError, """<p> tag within <div id="ssb"> was not found on Google search page""", soup)
+            return empty_info
+        txt = ''.join(p.findAll(text=True))
+        txt = txt.replace(',', '')
+        matches = re.search(r'%s (\d+) - (\d+) %s (?:%s )?(\d+)' % self._re_search_strings, txt, re.U)
+        if not matches:
+            return empty_info
+        return {'from': int(matches.group(1)), 'to': int(matches.group(2)), 'total': int(matches.group(3))}
+
+    def _extract_results(self, soup):
+        """Extract results from the page"""
+        results = soup.findAll('div','g')
+        ret_res = []
+        for result in results:
+            eres = self._extract_result(result)
+            if eres:
+                ret_res.append(eres)
+        return ret_res
+
+    def _extract_result(self, result):
+        """Extract title,url,desc for a result"""
+        title, url = self._extract_title_url(result)
+        desc = self._extract_description(result)
+        if not title and not url:
+            return None
+        return SearchResult(title, url, desc)
+
+    def _extract_title_url(self, result):
+        #title_a = result.find('a', {'class': re.compile(r'\bl\b')})
+        #title_a = result.find('h3').find('a')
+        title_a = result.find('a')
+        if not title_a:
+            self._maybe_raise(ParseError, "Title tag in Google search result was not found", result)
+            return None, None
+        title = ''.join(title_a.findAll(text=True))
+        title = self._html_unescape(title)
+        url = title_a['href']
+        match = re.match(r'/url\?q=((http|ftp|https)[^&]+)&', url)
+        if match:
+            url = urllib.parse.unquote(match.group(1))
+        match = re.match(r'/interstitial\?url=((http|ftp|https)[^&]+)&', url)
+        if match:
+            url = urllib.parse.unquote(match.group(1))
+        return title, url
+
+    def _extract_description(self, result):
+        """Seems this is enough"""
+        desc = result.find('span', {'class': 'st'})
+        return desc
+
+        desc_div = result.find('span', 'st')
+        if not desc_div:
+            self._maybe_raise(ParseError, "Description tag in Google search result was not found", result)
+            return None
+        desc_span = desc_div.find('span', {'class': 'st'})
+        if not desc_span:
+            self._maybe_raise(ParseError, "Description tag in Google search result was not found", result)
+            return None
+
+        desc_strs = []
+        def looper(tag):
+            if not tag: return
+            for t in tag:
+                try:
+                    if t.name == 'br': continue
+                except AttributeError:
+                    pass
+
+                try:
+                    desc_strs.append(t.string)
+                except AttributeError:
+                    desc_strs.append(t)
+
+        looper(desc_span)
+        looper(desc_span.find('wbr')) # BeautifulSoup does not self-close <wbr>
+
+        desc = ''.join(s for s in desc_strs if s)
+        return self._html_unescape(desc)
+
+    def _html_unescape(self, str):
+        def entity_replacer(m):
+            entity = m.group(1)
+            if entity in name2codepoint:
+                return unichr(name2codepoint[entity])
+            else:
+                return m.group(0)
+
+        def ascii_replacer(m):
+            cp = int(m.group(1))
+            if cp <= 255:
+                return unichr(cp)
+            else:
+                return m.group(0)
+
+        s =    re.sub(r'&#(\d+);',  ascii_replacer, str, re.U)
+        return re.sub(r'&([^;]+);', entity_replacer, s, re.U)
+
+class GoogleVideoSearch(object):
+    SEARCH_URL_0 = "http://www.google.%(tld)s/search?tbm=vid&hl=%(lang)s&q=%(query)s"
+    NEXT_PAGE_0 = "http://www.google.%(tld)s/search?tbm=vid&hl=%(lang)s&q=%(query)s&start=%(start)d"
+    SEARCH_URL_1 = "http://www.google.%(tld)s/search?tbm=vid&hl=%(lang)s&q=%(query)s&num=%(num)d"
+    NEXT_PAGE_1 = "http://www.google.%(tld)s/search?tbm=vid&hl=%(lang)s&q=%(query)s&num=%(num)d&start=%(start)d"
+
+    def __init__(self, query, random_agent=False, debug=False, lang="en", tld="com", re_search_strings=None):
+        self.query = query
+        self.debug = debug
+        self.browser = Browser(debug=debug)
+        self.results_info = None
+        self.eor = False # end of results
+        self._page = 0
+        self._first_indexed_in_previous = None
+        self._filetype = None
+        self._last_search_url = None
+        self._results_per_page = 10
+        self._last_from = 0
+        self._lang = lang
+        self._tld = tld
+
+        if re_search_strings:
+            self._re_search_strings = re_search_strings
+        elif lang == "de":
+            self._re_search_strings = ("Ergebnisse", "von", "ungefähr")
+        elif lang == "es":
+            self._re_search_strings = ("Resultados", "de", "aproximadamente")
+        # add more localised versions here
+        else:
+            self._re_search_strings = ("Results", "of", "about")
+
+        if random_agent:
+            self.browser.set_random_user_agent()
+
+    @property
+    def num_results(self):
+        if not self.results_info:
+            page = self._get_results_page()
+            self.results_info = self._extract_info(page)
+            if self.results_info['total'] == 0:
+                self.eor = True
+        return self.results_info['total']
+
+    @property
+    def last_search_url(self):
+        return self._last_search_url
+
+    def _get_page(self):
+        return self._page
+
+    def _set_page(self, page):
+        self._page = page
+
+    page = property(_get_page, _set_page)
+
+    def _get_first_indexed_in_previous(self):
+        return self._first_indexed_in_previous
+
+    def _set_first_indexed_in_previous(self, interval):
+        if interval == "day":
+            self._first_indexed_in_previous = 'd'
+        elif interval == "week":
+            self._first_indexed_in_previous = 'w'
+        elif interval == "month":
+            self._first_indexed_in_previous = 'm'
+        elif interval == "year":
+            self._first_indexed_in_previous = 'y'
+        else:
+            # a floating point value is a number of months
+            try:
+                num = float(interval)
+            except ValueError:
+                raise SearchError("Wrong parameter to first_indexed_in_previous: %s" % (str(interval)))
+            self._first_indexed_in_previous = 'm' + str(interval)
+
+    first_indexed_in_previous = property(_get_first_indexed_in_previous, _set_first_indexed_in_previous, doc="possible values: day, week, month, year, or a float value of months")
+
+    def _get_filetype(self):
+        return self._filetype
+
+    def _set_filetype(self, filetype):
+        self._filetype = filetype
+
+    filetype = property(_get_filetype, _set_filetype, doc="file extension to search for")
+
+    def _get_results_per_page(self):
+        return self._results_per_page
+
+    def _set_results_par_page(self, rpp):
+        self._results_per_page = rpp
+
+    results_per_page = property(_get_results_per_page, _set_results_par_page)
+
+    def get_results(self):
+        """ Gets a page of results """
+        if self.eor:
+            return []
+        MAX_VALUE = 1000000
+        page = self._get_results_page()
+        results = self._extract_results(page)
+        search_info = {'from': self.results_per_page*self._page,
+                       'to': self.results_per_page*self._page + len(results),
+                       'total': MAX_VALUE}
         if not self.results_info:
             self.results_info = search_info
             if self.num_results == 0:
@@ -189,20 +495,20 @@ class GoogleSearch(object):
     def _get_results_page(self):
         if self._page == 0:
             if self._results_per_page == 10:
-                url = GoogleSearch.SEARCH_URL_0
+                url = GoogleVideoSearch.SEARCH_URL_0
             else:
-                url = GoogleSearch.SEARCH_URL_1
+                url = GoogleVideoSearch.SEARCH_URL_1
         else:
             if self._results_per_page == 10:
-                url = GoogleSearch.NEXT_PAGE_0
+                url = GoogleVideoSearch.NEXT_PAGE_0
             else:
-                url = GoogleSearch.NEXT_PAGE_1
+                url = GoogleVideoSearch.NEXT_PAGE_1
 
-        safe_url = [url % {'query': urllib.quote_plus(self.query.encode('utf8')),
+        safe_url = [url % { 'query': urllib.parse.quote_plus(self.query),
                            'start': self._page * self._results_per_page,
                            'num': self._results_per_page,
-                           'tld': self._tld,
-                           'lang': self._lang}]
+                           'tld' : self._tld,
+                           'lang' : self._lang }]
 
         # possibly extend url with optional properties
         if self._first_indexed_in_previous:
@@ -215,8 +521,8 @@ class GoogleSearch(object):
 
         try:
             page = self.browser.get_page(safe_url)
-        except BrowserError, e:
-            raise SearchError, "Failed getting %s: %s" % (e.url, e.error)
+        except BrowserError as e:
+            raise SearchError("Failed getting %s: %s" % (e.url, e.error))
 
         return BeautifulSoup(page)
 
@@ -224,131 +530,80 @@ class GoogleSearch(object):
         empty_info = {'from': 0, 'to': 0, 'total': 0}
         div_ssb = soup.find('div', id='ssb')
         if not div_ssb:
-            # self._maybe_raise(ParseError, "Div with number of results was not found on Google search page", soup)
-            # return empty_info
-            pass
-        else:
-            p = div_ssb.find('p')
-            if not p:
-                self._maybe_raise(
-                    ParseError, """<p> tag within <div id="ssb"> was not found on Google search page""", soup)
-                return empty_info
-            txt = ''.join(p.findAll(text=True))
-            # print('txt: %s' % txt )
-            txt = txt.replace(',', '')
-            txt = txt.replace('.', '')
-            matches = re.search(
-                r'%s (\d+) - (\d+) %s (?:%s )?(\d+)' % self._re_search_strings, txt, re.U)
-            if not matches:
-                # return empty_info
-                pass
-            else:
-                # return matches
-                return {'from': int(matches.group(1)), 'to': int(matches.group(2)), 'total': int(matches.group(3))}
-
-        # Get resultStats
-        result_stats_text = None
-        try:
-            result_stats_text = soup.find(
-                'div',
-                {
-                    'id': 'resultStats'
-                }
-            ).text
-        except Exception as e:
+            self._maybe_raise(ParseError, "Div with number of results was not found on Google search page", soup)
             return empty_info
-            # return None
-
-        # print('result_stats_text: %s' % result_stats_text)
-        result_stats_text = result_stats_text.replace(',', '')
-        result_stats_text = result_stats_text.replace('.', '')
-        # print('result_stats_text: %s' % result_stats_text)
-
-        # print('result_stats_text: %s' % result_stats_text)
-
-        # Depending on lang ...
-        if self._lang == 'en':
-            reg_exp = r'^About ([\d]+\.?[\d]+?) results$'
-        elif self._lang == 'da':
-            reg_exp = r'^Ca ([\d]+\.?[\d]+?) resultater$'
-        matches = re.search(
-            reg_exp,
-            result_stats_text,
-            re.U
-        )
+        p = div_ssb.find('p')
+        if not p:
+            self._maybe_raise(ParseError, """<p> tag within <div id="ssb"> was not found on Google search page""", soup)
+            return empty_info
+        txt = ''.join(p.findAll(text=True))
+        txt = txt.replace(',', '')
+        matches = re.search(r'%s (\d+) - (\d+) %s (?:%s )?(\d+)' % self._re_search_strings, txt, re.U)
         if not matches:
             return empty_info
-            # return None
-        else:
-            total = matches.group(1).replace('.', '')
-            # We have total ...
-            # Calculate from / to based on
-            # current paged page, number of items ...
-            # return {'from': int(matches.group(1)), 'to':
-            # int(matches.group(2)), 'total': int(total)}
-            return {
-                'from': self.results_per_page * self._page,
-                'to': self.results_per_page * self._page + self.results_per_page,
-                'total': int(total)
-            }
+        return {'from': int(matches.group(1)), 'to': int(matches.group(2)), 'total': int(matches.group(3))}
 
     def _extract_results(self, soup):
-        results = soup.findAll('li', {'class': 'g'})
+        results = soup.findAll('li', {"class" : re.compile(r'\b(g videobox|g)\b')})
         ret_res = []
         for result in results:
             eres = self._extract_result(result)
             if eres:
                 ret_res.append(eres)
-
-        if len(ret_res) > 0:
-            return ret_res
-
-        results = soup.findAll('div', {'class': 'g'})
-        ret_res = []
-        for result in results:
-            eres = self._extract_result(result)
-            if eres:
-                ret_res.append(eres)
-
         return ret_res
 
     def _extract_result(self, result):
-        # print(result)
-        title, url = self._extract_title_url(result)
-        desc = self._extract_description(result)
-        if not title or not url or not desc:
-            return None
-        return SearchResult(title, url, desc)
+
+        h3=result.findAll('h3')
+        name = ''
+        for lonuri in h3:
+            name = name +  str(lonuri)
+        videoname =  nltk.clean_html(str(name))
+        video_url = BeautifulSoup(str(h3)).findAll('a')
+        url = str.split(video_url[0]['href'][7:].encode('utf8'),'&')[0]
+        url = url.replace('%3F', '?')
+        url = url.replace('%3D', '=')
+        desc = result.find('span',{'class':'st'})
+        meta = result.find('span',{'class':'f'})
+        author = ''
+        duration = ''
+        date = ''
+        if(not meta== None):
+            metastr= nltk.clean_html(str(meta))
+            metaarr = metastr.split('-')
+            date = metaarr[0]
+            duration = metaarr[1]
+            author = metaarr[2][13:]
+        description = nltk.clean_html(str(desc))
+        return FaceVideoSearchResult(videoname,url,description,date,duration,author)
+        #return FaceImageSearchResult(trumnail, image)
 
     def _extract_title_url(self, result):
         #title_a = result.find('a', {'class': re.compile(r'\bl\b')})
         title_a = result.find('a')
         if not title_a:
-            self._maybe_raise(
-                ParseError, "Title tag in Google search result was not found", result)
+            self._maybe_raise(ParseError, "Title tag in Google search result was not found", result)
             return None, None
         title = ''.join(title_a.findAll(text=True))
         title = self._html_unescape(title)
         url = title_a['href']
         match = re.match(r'/url\?q=(http[^&]+)&', url)
         if match:
-            url = urllib.unquote(match.group(1))
-
-        # print('title: %s' % title )
-        # print('url: %s' % url )
+            url = urllib.parse.unquote(match.group(1))
         return title, url
 
     def _extract_description(self, result):
         desc_div = result.find('div', {'class': re.compile(r'\bs\b')})
-        desc_strs = []
+        if not desc_div:
+            self._maybe_raise(ParseError, "Description tag in Google search result was not found", result)
+            return None
 
+        desc_strs = []
         def looper(tag):
-            if not tag:
-                return
+            if not tag: return
             for t in tag:
                 try:
-                    if t.name == 'br':
-                        break
+                    if t.name == 'br': break
                 except AttributeError:
                     pass
 
@@ -356,36 +611,12 @@ class GoogleSearch(object):
                     desc_strs.append(t.string)
                 except AttributeError:
                     desc_strs.append(t)
-        if not desc_div:
-            pass
-            # self._maybe_raise(ParseError, "Description tag in Google search result was not found", result)
-            # return None
-        else:
-            looper(desc_div)
-            # BeautifulSoup does not self-close <wbr>
-            looper(desc_div.find('wbr'))
 
-            desc = ''.join(s for s in desc_strs if s)
-            desc = self._html_unescape(desc)
-            if len(desc) > 0:
-                return desc
+        looper(desc_div)
+        looper(desc_div.find('wbr')) # BeautifulSoup does not self-close <wbr>
 
-        desc_object = result.findNext('span', {'class': 'st'})
-        desc_span = ""
-        try:
-            desc_span = desc_object.text
-        except:
-            self._maybe_raise(
-                ParseError, "Description tag in Google search result was not found", result)
-        #desc_span = result.findNext('span', {'class': 'st'}).text
-        if not desc_span:
-            self._maybe_raise(
-                ParseError, "Description tag in Google search result was not found", result)
-            return None
-
-        desc = desc_span  # self._html_unescape(desc_span)
-
-        return desc
+        desc = ''.join(s for s in desc_strs if s)
+        return self._html_unescape(desc)
 
     def _html_unescape(self, str):
         def entity_replacer(m):
@@ -402,9 +633,531 @@ class GoogleSearch(object):
             else:
                 return m.group(0)
 
-        s = re.sub(r'&#(\d+);',  ascii_replacer, str, re.U)
+        s =    re.sub(r'&#(\d+);',  ascii_replacer, str, re.U)
         return re.sub(r'&([^;]+);', entity_replacer, s, re.U)
 
+class GoogleImageSearch(object):
+    SEARCH_URL_0 = "http://www.google.%(tld)s/search?tbm=isch&hl=%(lang)s&q=%(query)s"
+    NEXT_PAGE_0 = "http://www.google.%(tld)s/search?tbm=isch&hl=%(lang)s&q=%(query)s&start=%(start)d"
+    SEARCH_URL_1 = "http://www.google.%(tld)s/search?tbm=isch&hl=%(lang)s&q=%(query)s&num=%(num)d"
+    NEXT_PAGE_1 = "http://www.google.%(tld)s/search?tbm=isch&hl=%(lang)s&q=%(query)s&num=%(num)d&start=%(start)d"
+
+    def __init__(self, query, random_agent=False, debug=False, lang="en", tld="com", re_search_strings=None):
+        self.query = query
+        self.debug = debug
+        self.browser = Browser(debug=debug)
+        self.results_info = None
+        self.eor = False # end of results
+        self._page = 0
+        self._first_indexed_in_previous = None
+        self._filetype = None
+        self._last_search_url = None
+        self._results_per_page = 10
+        self._last_from = 0
+        self._lang = lang
+        self._tld = tld
+
+        if re_search_strings:
+            self._re_search_strings = re_search_strings
+        elif lang == "de":
+            self._re_search_strings = ("Ergebnisse", "von", "ungefähr")
+        elif lang == "es":
+            self._re_search_strings = ("Resultados", "de", "aproximadamente")
+        # add more localised versions here
+        else:
+            self._re_search_strings = ("Results", "of", "about")
+
+        if random_agent:
+            self.browser.set_random_user_agent()
+
+    @property
+    def num_results(self):
+        if not self.results_info:
+            page = self._get_results_page()
+            self.results_info = self._extract_info(page)
+            if self.results_info['total'] == 0:
+                self.eor = True
+        return self.results_info['total']
+
+    @property
+    def last_search_url(self):
+        return self._last_search_url
+
+    def _get_page(self):
+        return self._page
+
+    def _set_page(self, page):
+        self._page = page
+
+    page = property(_get_page, _set_page)
+
+    def _get_first_indexed_in_previous(self):
+        return self._first_indexed_in_previous
+
+    def _set_first_indexed_in_previous(self, interval):
+        if interval == "day":
+            self._first_indexed_in_previous = 'd'
+        elif interval == "week":
+            self._first_indexed_in_previous = 'w'
+        elif interval == "month":
+            self._first_indexed_in_previous = 'm'
+        elif interval == "year":
+            self._first_indexed_in_previous = 'y'
+        else:
+            # a floating point value is a number of months
+            try:
+                num = float(interval)
+            except ValueError:
+                raise SearchError("Wrong parameter to first_indexed_in_previous: %s" % (str(interval)))
+            self._first_indexed_in_previous = 'm' + str(interval)
+
+    first_indexed_in_previous = property(_get_first_indexed_in_previous, _set_first_indexed_in_previous, doc="possible values: day, week, month, year, or a float value of months")
+
+    def _get_filetype(self):
+        return self._filetype
+
+    def _set_filetype(self, filetype):
+        self._filetype = filetype
+
+    filetype = property(_get_filetype, _set_filetype, doc="file extension to search for")
+
+    def _get_results_per_page(self):
+        return self._results_per_page
+
+    def _set_results_par_page(self, rpp):
+        self._results_per_page = rpp
+
+    results_per_page = property(_get_results_per_page, _set_results_par_page)
+
+    def get_results(self):
+        """ Gets a page of results """
+        if self.eor:
+            return []
+        MAX_VALUE = 1000000
+        page = self._get_results_page()
+        results = self._extract_results(page)
+        search_info = {'from': self.results_per_page*self._page,
+                       'to': self.results_per_page*self._page + len(results),
+                       'total': MAX_VALUE}
+        if not self.results_info:
+            self.results_info = search_info
+            if self.num_results == 0:
+                self.eor = True
+                return []
+        if not results:
+            self.eor = True
+            return []
+        if self._page > 0 and search_info['from'] == self._last_from:
+            self.eor = True
+            return []
+        if search_info['to'] == search_info['total']:
+            self.eor = True
+        self._page += 1
+        self._last_from = search_info['from']
+        return results
+
+    def _maybe_raise(self, cls, *arg):
+        if self.debug:
+            raise cls(*arg)
+
+    def _get_results_page(self):
+        if self._page == 0:
+            if self._results_per_page == 10:
+                url = GoogleImageSearch.SEARCH_URL_0
+            else:
+                url = GoogleImageSearch.SEARCH_URL_1
+        else:
+            if self._results_per_page == 10:
+                url = GoogleImageSearch.NEXT_PAGE_0
+            else:
+                url = GoogleImageSearch.NEXT_PAGE_1
+
+        safe_url = [url % { 'query': urllib.parse.quote_plus(self.query),
+                           'start': self._page * self._results_per_page,
+                           'num': self._results_per_page,
+                           'tld' : self._tld,
+                           'lang' : self._lang }]
+
+        # possibly extend url with optional properties
+        if self._first_indexed_in_previous:
+            safe_url.extend(["&as_qdr=", self._first_indexed_in_previous])
+        if self._filetype:
+            safe_url.extend(["&as_filetype=", self._filetype])
+
+        safe_url = "".join(safe_url)
+        self._last_search_url = safe_url
+
+        try:
+            page = self.browser.get_page(safe_url)
+        except BrowserError as e:
+            raise SearchError("Failed getting %s: %s" % (e.url, e.error))
+
+        return BeautifulSoup(page)
+
+    def _extract_info(self, soup):
+        empty_info = {'from': 0, 'to': 0, 'total': 0}
+        div_ssb = soup.find('div', id='ssb')
+        if not div_ssb:
+            self._maybe_raise(ParseError, "Div with number of results was not found on Google search page", soup)
+            return empty_info
+        p = div_ssb.find('p')
+        if not p:
+            self._maybe_raise(ParseError, """<p> tag within <div id="ssb"> was not found on Google search page""", soup)
+            return empty_info
+        txt = ''.join(p.findAll(text=True))
+        txt = txt.replace(',', '')
+        matches = re.search(r'%s (\d+) - (\d+) %s (?:%s )?(\d+)' % self._re_search_strings, txt, re.U)
+        if not matches:
+            return empty_info
+        return {'from': int(matches.group(1)), 'to': int(matches.group(2)), 'total': int(matches.group(3))}
+
+    def _extract_results(self, soup):
+        # Should extract <a href="/url?q=
+        results = soup.findAll('a', href=re.compile("^/url\?q="))
+        #results = soup.findAll('img')
+        ret_res = []
+        for result in results:
+            eres = self._extract_result(result)
+            if eres:
+                ret_res.append(eres)
+        return ret_res
+
+    def _extract_result(self, result):
+        imgsa = result.findAll('img')
+        if len(imgsa)==0:
+            return FaceImageSearchResult("","")
+        else:
+            imgs = imgsa[0]
+        trumnail = imgs['src']
+        image = result['href'][7:]
+        return FaceImageSearchResult(trumnail, image)
+
+    def _extract_title_url(self, result):
+        #title_a = result.find('a', {'class': re.compile(r'\bl\b')})
+        title_a = result.find('a')
+        if not title_a:
+            self._maybe_raise(ParseError, "Title tag in Google search result was not found", result)
+            return None, None
+        title = ''.join(title_a.findAll(text=True))
+        title = self._html_unescape(title)
+        url = title_a['href']
+        match = re.match(r'/url\?q=(http[^&]+)&', url)
+        if match:
+            url = urllib.parse.unquote(match.group(1))
+        return title, url
+
+    def _extract_description(self, result):
+        desc_div = result.find('div', {'class': re.compile(r'\bs\b')})
+        if not desc_div:
+            self._maybe_raise(ParseError, "Description tag in Google search result was not found", result)
+            return None
+
+        desc_strs = []
+        def looper(tag):
+            if not tag: return
+            for t in tag:
+                try:
+                    if t.name == 'br': break
+                except AttributeError:
+                    pass
+
+                try:
+                    desc_strs.append(t.string)
+                except AttributeError:
+                    desc_strs.append(t)
+
+        looper(desc_div)
+        looper(desc_div.find('wbr')) # BeautifulSoup does not self-close <wbr>
+
+        desc = ''.join(s for s in desc_strs if s)
+        return self._html_unescape(desc)
+
+    def _html_unescape(self, str):
+        def entity_replacer(m):
+            entity = m.group(1)
+            if entity in name2codepoint:
+                return unichr(name2codepoint[entity])
+            else:
+                return m.group(0)
+
+        def ascii_replacer(m):
+            cp = int(m.group(1))
+            if cp <= 255:
+                return unichr(cp)
+            else:
+                return m.group(0)
+
+        s =    re.sub(r'&#(\d+);',  ascii_replacer, str, re.U)
+        return re.sub(r'&([^;]+);', entity_replacer, s, re.U)
+
+
+class GoogleFaceImageSearch(object):
+    SEARCH_URL_0 = "http://www.google.%(tld)s/search?tbm=isch&tbs=itp:face&hl=%(lang)s&q=%(query)s"
+    NEXT_PAGE_0 = "http://www.google.%(tld)s/search?tbm=isch&tbs=itp:face&hl=%(lang)s&q=%(query)s&start=%(start)d"
+    SEARCH_URL_1 = "http://www.google.%(tld)s/search?tbm=isch&tbs=itp:face&hl=%(lang)s&q=%(query)s&num=%(num)d"
+    NEXT_PAGE_1 = "http://www.google.%(tld)s/search?tbm=isch&tbs=itp:face&hl=%(lang)s&q=%(query)s&num=%(num)d&start=%(start)d"
+
+    def __init__(self, query, random_agent=False, debug=False, lang="en", tld="com", re_search_strings=None):
+        self.query = query
+        self.debug = debug
+        self.browser = Browser(debug=debug)
+        self.results_info = None
+        self.eor = False # end of results
+        self._page = 0
+        self._first_indexed_in_previous = None
+        self._filetype = None
+        self._last_search_url = None
+        self._results_per_page = 10
+        self._last_from = 0
+        self._lang = lang
+        self._tld = tld
+
+        if re_search_strings:
+            self._re_search_strings = re_search_strings
+        elif lang == "de":
+            self._re_search_strings = ("Ergebnisse", "von", "ungefähr")
+        elif lang == "es":
+            self._re_search_strings = ("Resultados", "de", "aproximadamente")
+        elif lang == "fr":
+            self._re_search_strings = ("résultats", "de", "Environ")
+        # add more localised versions here
+        else:
+            self._re_search_strings = ("Results", "of", "about")
+
+        if random_agent:
+            self.browser.set_random_user_agent()
+
+    @property
+    def num_results(self):
+        if not self.results_info:
+            page = self._get_results_page()
+            self.results_info = self._extract_info(page)
+            if self.results_info['total'] == 0:
+                self.eor = True
+        return self.results_info['total']
+
+    @property
+    def last_search_url(self):
+        return self._last_search_url
+
+    def _get_page(self):
+        return self._page
+
+    def _set_page(self, page):
+        self._page = page
+
+    page = property(_get_page, _set_page)
+
+    def _get_first_indexed_in_previous(self):
+        return self._first_indexed_in_previous
+
+    def _set_first_indexed_in_previous(self, interval):
+        if interval == "day":
+            self._first_indexed_in_previous = 'd'
+        elif interval == "week":
+            self._first_indexed_in_previous = 'w'
+        elif interval == "month":
+            self._first_indexed_in_previous = 'm'
+        elif interval == "year":
+            self._first_indexed_in_previous = 'y'
+        else:
+            # a floating point value is a number of months
+            try:
+                num = float(interval)
+            except ValueError:
+                raise SearchError("Wrong parameter to first_indexed_in_previous: %s" % (str(interval)))
+            self._first_indexed_in_previous = 'm' + str(interval)
+
+    first_indexed_in_previous = property(_get_first_indexed_in_previous, _set_first_indexed_in_previous, doc="possible values: day, week, month, year, or a float value of months")
+
+    def _get_filetype(self):
+        return self._filetype
+
+    def _set_filetype(self, filetype):
+        self._filetype = filetype
+
+    filetype = property(_get_filetype, _set_filetype, doc="file extension to search for")
+
+    def _get_results_per_page(self):
+        return self._results_per_page
+
+    def _set_results_par_page(self, rpp):
+        self._results_per_page = rpp
+
+    results_per_page = property(_get_results_per_page, _set_results_par_page)
+
+    def get_results(self):
+        """ Gets a page of results """
+        if self.eor:
+            return []
+        MAX_VALUE = 1000000
+        page = self._get_results_page()
+        results = self._extract_results(page)
+        search_info = {'from': self.results_per_page*self._page,
+                       'to': self.results_per_page*self._page + len(results),
+                       'total': MAX_VALUE}
+        if not self.results_info:
+            self.results_info = search_info
+            if self.num_results == 0:
+                self.eor = True
+                return []
+        if not results:
+            self.eor = True
+            return []
+        if self._page > 0 and search_info['from'] == self._last_from:
+            self.eor = True
+            return []
+        if search_info['to'] == search_info['total']:
+            self.eor = True
+        self._page += 1
+        self._last_from = search_info['from']
+        return results
+
+    def _maybe_raise(self, cls, *arg):
+        if self.debug:
+            raise cls(*arg)
+
+    def _get_results_page(self):
+        if self._page == 0:
+            if self._results_per_page == 10:
+                url = GoogleFaceImageSearch.SEARCH_URL_0
+            else:
+                url = GoogleFaceImageSearch.SEARCH_URL_1
+        else:
+            if self._results_per_page == 10:
+                url = GoogleFaceImageSearch.NEXT_PAGE_0
+            else:
+                url = GoogleFaceImageSearch.NEXT_PAGE_1
+
+        safe_url = [url % { 'query': urllib.parse.quote_plus(self.query),
+                           'start': self._page * self._results_per_page,
+                           'num': self._results_per_page,
+                           'tld' : self._tld,
+                           'lang' : self._lang }]
+
+        # possibly extend url with optional properties
+        if self._first_indexed_in_previous:
+            safe_url.extend(["&as_qdr=", self._first_indexed_in_previous])
+        if self._filetype:
+            safe_url.extend(["&as_filetype=", self._filetype])
+
+        safe_url = "".join(safe_url)
+        self._last_search_url = safe_url
+
+        try:
+            page = self.browser.get_page(safe_url)
+        except BrowserError as e:
+            raise SearchError("Failed getting %s: %s" % (e.url, e.error))
+        return BeautifulSoup(page)
+
+    def _extract_info(self, soup):
+        empty_info = {'from': 0, 'to': 0, 'total': 0}
+        div_ssb = soup.find('div', id='resultStats')
+        if not div_ssb:
+            self._maybe_raise(ParseError, "Div with number of results was not found on Google search page", soup)
+            return empty_info
+        #p = div_ssb.find('p')
+        p = div_ssb
+        if not p:
+            self._maybe_raise(ParseError, """<p> tag within <div id="ssb"> was not found on Google search page""", soup)
+            return empty_info
+        txt = ''.join(p.findAll(text=True))
+        txt = txt.replace(',', '')
+        txt = txt.replace('&nbsp;', '')
+        #matches = re.search(r'(\d+) - (\d+) %s (?:%s )?(\d+)' % self._re_search_strings, txt, re.U)
+        #matches = re.search(r'(\d+) %s' % self._re_search_strings[0], txt, re.U|re.I)
+        matches = re.search(r'(\d+)', txt, re.U)
+
+        if not matches:
+            print(self._re_search_strings[0])
+            print(txt)
+            return empty_info
+        return {'from': 0, 'to': 0, 'total': int(matches.group(1))}
+
+    def _extract_results(self, soup):
+        # Should extract <a href="/url?q=
+        results = soup.findAll('a', href=re.compile("^/url\?q="))
+        #results = soup.findAll('img')
+        ret_res = []
+        for result in results:
+            eres = self._extract_result(result)
+            if eres:
+                ret_res.append(eres)
+        return ret_res
+
+    def _extract_result(self, result):
+        imgsa = result.findAll('img')
+        if len(imgsa)==0:
+            return FaceImageSearchResult("","")
+        else:
+            imgs = imgsa[0]
+        trumnail = imgs['src']
+        image = result['href'][7:]
+        return FaceImageSearchResult(trumnail, image)
+
+    def _extract_title_url(self, result):
+        title_a = result.find('a', {'class': 'l'})
+        if not title_a:
+            self._maybe_raise(ParseError, "Title tag in Google search result was not found", result)
+            return None, None
+        title = ''.join(title_a.findAll(text=True))
+        title = self._html_unescape(title)
+        url = title_a['href']
+        match = re.match(r'/url\?q=((http|ftp|https)[^&]+)&', url)
+        if match:
+            url = urllib.parse.unquote(match.group(1))
+        match = re.match(r'/interstitial\?url=((http|ftp|https)[^&]+)&', url)
+        if match:
+            url = urllib.parse.unquote(match.group(1))
+        return title, url
+
+    def _extract_description(self, result):
+        desc_div = result.find('span', {'class': 'st'})
+        if not desc_div:
+            self._maybe_raise(ParseError, "Description tag in Google search result was not found", result)
+            return None
+        desc_span = desc_div.find('span', {'class': 'st'})
+        if not desc_span:
+            self._maybe_raise(ParseError, "Description tag in Google search result was not found", result)
+            return None
+
+        desc_strs = []
+        def looper(tag):
+            if not tag: return
+            for t in tag:
+                try:
+                    if t.name == 'br': break
+                except AttributeError:
+                    pass
+
+                try:
+                    desc_strs.append(t.string)
+                except AttributeError:
+                    desc_strs.append(t)
+
+        looper(desc_span)
+        looper(desc_span.find('wbr')) # BeautifulSoup does not self-close <wbr>
+
+        desc = ''.join(s for s in desc_strs if s)
+        return self._html_unescape(desc)
+
+    def _html_unescape(self, str):
+        def entity_replacer(m):
+            entity = m.group(1)
+            if entity in name2codepoint:
+                return unichr(name2codepoint[entity])
+            else:
+                return m.group(0)
+
+        def ascii_replacer(m):
+            cp = int(m.group(1))
+            if cp <= 255:
+                return unichr(cp)
+            else:
+                return m.group(0)
+
+        s =    re.sub(r'&#(\d+);',  ascii_replacer, str, re.U)
+        return re.sub(r'&([^;]+);', entity_replacer, s, re.U)
 
 class BlogSearch(GoogleSearch):
 
@@ -412,28 +1165,25 @@ class BlogSearch(GoogleSearch):
         empty_info = {'from': 0, 'to': 0, 'total': 0}
         td_rsb = soup.find('td', 'rsb')
         if not td_rsb:
-            self._maybe_raise(
-                ParseError, "Td with number of results was not found on Blogs search page", soup)
+            self._maybe_raise(ParseError, "Td with number of results was not found on Blogs search page", soup)
             return empty_info
         font = td_rsb.find('font')
         if not font:
-            self._maybe_raise(
-                ParseError, """<p> tag within <tr class='rsb'> was not found on Blogs search page""", soup)
+            self._maybe_raise(ParseError, """<p> tag within <tr class='rsb'> was not found on Blogs search page""", soup)
             return empty_info
         txt = ''.join(font.findAll(text=True))
         txt = txt.replace(',', '')
         if self.hl == 'es':
-            matches = re.search(
-                r'Resultados (\d+) - (\d+) de (?:aproximadamente )?(\d+)', txt, re.U)
+            matches = re.search(r'Resultados (\d+) - (\d+) de (?:aproximadamente )?(\d+)', txt, re.U)
         elif self.hl == 'en':
-            matches = re.search(
-                r'Results (\d+) - (\d+) of (?:about )?(\d+)', txt, re.U)
+            matches = re.search(r'Results (\d+) - (\d+) of (?:about )?(\d+)', txt, re.U)
         if not matches:
             return empty_info
         return {'from': int(matches.group(1)), 'to': int(matches.group(2)), 'total': int(matches.group(3))}
 
     def _extract_results(self, soup):
-        results = soup.findAll('p', {'class': 'g'})
+        #results = soup.findAll('p', {'class': 'g'})
+        results = soup.findAll('li','g')
         ret_res = []
         for result in results:
             eres = self._extract_result(result)
@@ -452,28 +1202,29 @@ class BlogSearch(GoogleSearch):
         #title_a = result.find('a', {'class': re.compile(r'\bl\b')})
         title_a = result.findNext('a')
         if not title_a:
-            self._maybe_raise(
-                ParseError, "Title tag in Blog search result was not found", result)
+            self._maybe_raise(ParseError, "Title tag in Blog search result was not found", result)
             return None, None
         title = ''.join(title_a.findAll(text=True))
         title = self._html_unescape(title)
         url = title_a['href']
         match = re.match(r'/url\?q=(http[^&]+)&', url)
         if match:
-            url = urllib.unquote(match.group(1))
+            url = urllib.parse.unquote(match.group(1))
         return title, url
 
     def _extract_description(self, result):
-        desc_td = result.findNext('td')
-        desc_strs = []
+        #desc_td = result.findNext('td')
+        desc_div = result.find('span', 'st')
+        if not desc_td:
+            self._maybe_raise(ParseError, "Description tag in Google search result was not found", result)
+            return None
 
+        desc_strs = []
         def looper(tag):
-            if not tag:
-                return
+            if not tag: return
             for t in tag:
                 try:
-                    if t.name == 'br':
-                        break
+                    if t.name == 'br': break
                 except AttributeError:
                     pass
 
@@ -482,13 +1233,8 @@ class BlogSearch(GoogleSearch):
                 except AttributeError:
                     desc_strs.append(t)
 
-        if not desc_td:
-            self._maybe_raise(ParseError, "Description tag in Google search result was not found", result)
-            return None
-
         looper(desc_td)
-        # BeautifulSoup does not self-close <wbr>
-        looper(desc_td.find('wbr'))
+        looper(desc_td.find('wbr')) # BeautifulSoup does not self-close <wbr>
 
         desc = ''.join(s for s in desc_strs if s)
         return self._html_unescape(desc)
