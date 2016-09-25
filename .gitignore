@@ -1,3 +1,12 @@
 xgoogle.egg-info
 *~
 *.swp
+.idea
+*.pyc
+.project
+.pydevproject
+.settings
+
+# Ignore build files.
+build/
+dist/
